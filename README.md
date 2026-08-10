@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # BridgeCore
 
 A reusable, multi-tenant backend platform providing the core services every
@@ -242,3 +243,6 @@ image.
 - Swap `net/http`/`database/sql` back to Gin/GORM if desired in an
   environment with full package-proxy access — the service/repository
   interfaces were designed so this is a contained, mechanical change.
+=======
+# BridgeCore
+>>>>>>> 7dcf798a90f41e49194359d494e65b5be9ad15b7
