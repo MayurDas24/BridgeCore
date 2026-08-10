@@ -1,0 +1,452 @@
+openapi: 3.0.3
+info:
+  title: BridgeCore Platform API
+  description: >
+    BridgeCore is a reusable multi-tenant backend platform providing
+    authentication, authorization, feature entitlements, API keys, usage
+    metering, and audit logging as REST APIs for downstream products.
+  version: "0.1.0"
+  contact:
+    name: BridgeCore Platform Team
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: auth
+  - name: tenants
+  - name: users
+  - name: entitlements
+  - name: apikeys
+  - name: usage
+  - name: audit
+  - name: health
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+        data: {}
+        error: {}
+    Tenant:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        plan: { type: string, enum: [free, pro, enterprise] }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        first_name: { type: string }
+        last_name: { type: string }
+        role: { type: string, enum: [admin, developer, viewer] }
+        is_active: { type: boolean }
+    TokenPair:
+      type: object
+      properties:
+        access_token: { type: string }
+        access_token_expires_at: { type: string, format: date-time }
+        refresh_token: { type: string }
+        refresh_token_expires_at: { type: string, format: date-time }
+    APIKey:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        name: { type: string }
+        prefix: { type: string }
+        last_four: { type: string }
+        is_active: { type: boolean }
+    UsageLog:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        endpoint: { type: string }
+        method: { type: string }
+        status_code: { type: integer }
+        latency_ms: { type: integer }
+        created_at: { type: string, format: date-time }
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        actor_id: { type: string, format: uuid }
+        event: { type: string }
+        metadata: { type: object }
+        endpoint: { type: string }
+        ip_address: { type: string }
+        user_agent: { type: string }
+        created_at: { type: string, format: date-time }
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Full health report
+      responses:
+        "200": { description: Healthy }
+        "503": { description: Degraded }
+  /ready:
+    get:
+      tags: [health]
+      summary: Readiness probe
+      responses:
+        "200": { description: Ready }
+        "503": { description: Not ready }
+  /live:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      responses:
+        "200": { description: Alive }
+
+  /api/v1/auth/signup:
+    post:
+      tags: [auth]
+      summary: Register a new tenant and admin user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_name, email, password]
+              properties:
+                tenant_name: { type: string }
+                email: { type: string }
+                password: { type: string, minLength: 8 }
+                first_name: { type: string }
+                last_name: { type: string }
+      responses:
+        "201": { description: Created }
+        "400": { description: Bad request }
+        "409": { description: Email or slug already taken }
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Log in with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200": { description: OK }
+        "401": { description: Invalid credentials }
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Exchange a refresh token for a new token pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200": { description: OK }
+        "401": { description: Invalid or expired refresh token }
+
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke all refresh tokens for the current user
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: OK }
+
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Get the currently authenticated user
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: OK }
+
+  /api/v1/tenants:
+    post:
+      tags: [tenants]
+      summary: Create a tenant (admin only)
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, slug]
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                plan: { type: string, enum: [free, pro, enterprise] }
+      responses:
+        "201": { description: Created }
+    get:
+      tags: [tenants]
+      summary: List tenants (admin only)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer }
+        - in: query
+          name: page_size
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+
+  /api/v1/tenants/{id}:
+    get:
+      tags: [tenants]
+      summary: Get a tenant by ID
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+        "404": { description: Not found }
+    put:
+      tags: [tenants]
+      summary: Update a tenant (admin only)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+    delete:
+      tags: [tenants]
+      summary: Soft-delete a tenant (admin only)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+
+  /api/v1/users:
+    get:
+      tags: [users]
+      summary: List users in the current tenant
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: OK }
+
+  /api/v1/users/{id}/role:
+    patch:
+      tags: [users]
+      summary: Change a user's RBAC role (admin only)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [admin, developer, viewer] }
+      responses:
+        "200": { description: OK }
+
+  /api/v1/features:
+    get:
+      tags: [entitlements]
+      summary: List the full feature catalog
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: OK }
+
+  /api/v1/features/mine:
+    get:
+      tags: [entitlements]
+      summary: List features enabled for the current tenant
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: OK }
+
+  /api/v1/features/grant:
+    post:
+      tags: [entitlements]
+      summary: Grant or revoke a feature for a tenant (admin only)
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_id, feature_key, enabled]
+              properties:
+                tenant_id: { type: string }
+                feature_key: { type: string }
+                enabled: { type: boolean }
+      responses:
+        "200": { description: OK }
+
+  /api/v1/apikeys:
+    post:
+      tags: [apikeys]
+      summary: Generate a new API key
+      security: [{ BearerAuth: [] }]
+      responses:
+        "201": { description: Created }
+    get:
+      tags: [apikeys]
+      summary: List API keys for the current tenant
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: OK }
+
+  /api/v1/apikeys/{id}/rotate:
+    post:
+      tags: [apikeys]
+      summary: Rotate an API key
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+
+  /api/v1/apikeys/{id}:
+    delete:
+      tags: [apikeys]
+      summary: Deactivate (revoke) an API key
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+
+  /api/v1/usage:
+    get:
+      tags: [usage]
+      summary: List raw usage records for the current tenant
+      security: [{ BearerAuth: [], ApiKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: endpoint
+          schema: { type: string }
+        - in: query
+          name: method
+          schema: { type: string }
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+        - in: query
+          name: page
+          schema: { type: integer }
+        - in: query
+          name: page_size
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+
+  /api/v1/usage/summary:
+    get:
+      tags: [usage]
+      summary: Get aggregated usage summary per endpoint
+      security: [{ BearerAuth: [], ApiKeyAuth: [] }]
+      responses:
+        "200": { description: OK }
+
+  /api/v1/usage/export:
+    get:
+      tags: [usage]
+      summary: >
+        Export usage records as CSV. Requires the "usage.export" feature
+        entitlement (Pro/Enterprise plans) — gated by middleware before
+        the handler runs.
+      security: [{ BearerAuth: [], ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: CSV file
+          content:
+            text/csv:
+              schema: { type: string }
+        "403": { description: Plan does not include this feature }
+
+  /api/v1/audit:
+    get:
+      tags: [audit]
+      summary: List audit log entries for the current tenant
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: query
+          name: event
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer }
+        - in: query
+          name: page_size
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+
+  /api/v1/audit/{id}:
+    get:
+      tags: [audit]
+      summary: Get a single audit log entry by ID
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+        "404": { description: Not found }

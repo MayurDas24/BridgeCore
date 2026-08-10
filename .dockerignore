@@ -1,0 +1,14 @@
+.git
+.github
+*.md
+!docs/*.md
+.env
+.env.*
+!.env.example
+bin/
+tmp/
+*.test
+*.out
+.DS_Store
+postman/
+scripts/

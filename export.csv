@@ -1,0 +1,12 @@
+id,endpoint,method,status_code,latency_ms,request_id,created_at
+44af110e-3f50-4f2d-a6e8-cefef8df546d,/api/v1/usage/summary,GET,200,7,c09b73be-44b9-48eb-a0a7-bccb40f1a12a,2026-08-09T16:55:37Z
+1d7de880-4327-47b8-a4da-bcc6778b71fc,/api/v1/apikeys,POST,201,11,e84c9a17-a597-416a-9293-383e3744d399,2026-08-09T16:55:37Z
+6d9a6b46-0bf1-4e69-a81f-b562a3049e51,/api/v1/audit,GET,200,5,fcc40cce-e8a7-402b-894c-86d6c3e1a1be,2026-08-09T16:55:34Z
+d13be5d8-3b29-41f4-82c7-ec62bc183434,/api/v1/tenants,POST,403,1,ef6342fb-1d8d-40ac-a00a-c0923c8f4db1,2026-08-09T16:55:29Z
+fa294a17-08f1-4a1c-a6fb-8faaef11e3c6,/api/v1/tenants,POST,409,0,aa1fb13b-fcd1-41c0-8ff9-3cb51350f1ce,2026-08-09T16:55:26Z
+f84d5808-85dc-4f49-a452-54b127d5a94b,/api/v1/auth/me,GET,200,0,1ea5c6b8-9745-40d3-9e30-00e6fd3192b5,2026-08-09T16:55:22Z
+f38eff29-d16f-471d-a600-d217a1b402a1,/api/v1/tenants,POST,409,3,b4dcfd6c-11df-47b1-894d-92f5e265dd0d,2026-08-09T16:55:17Z
+688f01fa-9498-44ee-b242-54b9197383c4,/api/v1/tenants,POST,403,1,054e6250-def6-41cc-9f78-60cbb1981944,2026-08-09T16:55:12Z
+d6f1fb56-8dc3-43cc-9333-cd8094f0b4ff,/api/v1/tenants,POST,201,3,c63eb1ef-dd1f-4503-85a2-e1fc87e274c2,2026-08-09T16:54:52Z
+fd98b188-0cfa-4557-a557-4560aee0c178,/api/v1/auth/me,GET,200,0,b77a5711-ee61-440e-af43-22e1a4cb08b8,2026-08-09T16:54:47Z
+27f43cb8-a9d6-4ee2-a363-bc61ff0e713c,/api/v1/auth/me,GET,200,0,7b6d344c-7c61-444a-94b4-708d30b9559e,2026-08-09T16:54:28Z
