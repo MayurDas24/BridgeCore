@@ -1,0 +1,35 @@
+# ---- Secrets: never commit real environment files ----
+.env
+.env.*
+!.env.example
+
+# ---- Build artifacts ----
+bin/
+dist/
+tmp/
+*.exe
+*.test
+*.out
+coverage.out
+coverage.html
+
+# ---- Local export/object-store scratch space ----
+var/
+exports/
+*.csv
+!api/*.csv
+
+# ---- Terraform ----
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/*.tfplan
+infra/terraform/.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
+
+# ---- Editors / OS ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

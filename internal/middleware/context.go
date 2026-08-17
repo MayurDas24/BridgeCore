@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"github.com/bridgecore/bridgecore/internal/models"
+	"github.com/bridgecore/bridgecore/internal/tenancy"
 )
 
 type contextKey string
@@ -20,6 +21,7 @@ const (
 	ctxKeyTenantPlan contextKey = "tenant_plan"
 	ctxKeyAuthMethod contextKey = "auth_method" // "jwt" or "api_key"
 	ctxKeyAPIKeyID   contextKey = "api_key_id"
+	ctxKeyPlatform   contextKey = "platform_operator"
 )
 
 // AuthContext is the resolved identity attached to an authenticated request.
@@ -72,4 +74,34 @@ func AuthFromContext(ctx context.Context) (AuthContext, bool) {
 		AuthMethod: method,
 		APIKeyID:   apiKeyID,
 	}, true
+}
+
+// ScopeFromContext converts the authenticated identity into the tenancy
+// scope every service method takes.
+//
+// This is the single conversion point between "who authenticated" and "what
+// this request is allowed to touch", and it is why no handler or resolver
+// ever constructs a scope from a request body: there is nowhere else for one
+// to come from.
+func ScopeFromContext(ctx context.Context) tenancy.Scope {
+	ac, ok := AuthFromContext(ctx)
+	if !ok {
+		return tenancy.Scope{}
+	}
+	return tenancy.Scope{
+		TenantID: ac.TenantID,
+		UserID:   ac.UserID,
+		Role:     string(ac.Role),
+	}
+}
+
+// PlatformFromContext reports whether the request was authenticated as a
+// platform operator rather than as a tenant.
+func PlatformFromContext(ctx context.Context) bool {
+	v, _ := ctx.Value(ctxKeyPlatform).(bool)
+	return v
+}
+
+func withPlatform(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ctxKeyPlatform, true)
 }

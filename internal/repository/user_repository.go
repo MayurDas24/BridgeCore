@@ -110,3 +110,60 @@ func scanUser(row rowScanner) (*models.User, error) {
 	}
 	return &u, nil
 }
+
+// GetByIDInTenant is the tenant-scoped read used by every authenticated
+// code path. The tenant predicate lives in the SQL rather than in a Go
+// comparison after the fact, so a row belonging to another tenant is never
+// loaded into memory in the first place — defence in depth against a
+// forgotten check further up the stack.
+func (r *UserRepository) GetByIDInTenant(ctx context.Context, tenantID, id string) (*models.User, error) {
+	query := `
+		SELECT id, tenant_id, email, password_hash, first_name, last_name, role, is_active, last_login_at, created_at, updated_at, deleted_at
+		FROM users WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`
+	return r.scanOne(r.db.QueryRowContext(ctx, query, id, tenantID))
+}
+
+// UpdateRoleInTenant changes a user's role, refusing to touch rows outside
+// the caller's tenant.
+func (r *UserRepository) UpdateRoleInTenant(ctx context.Context, tenantID, id string, role models.Role) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE users SET role = $1, updated_at = now()
+		 WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL`,
+		role, id, tenantID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// CountAdminsInTenant counts active admins in a tenant. Used to refuse the
+// demotion of a tenant's last admin, which would otherwise leave the tenant
+// permanently unable to manage itself.
+func (r *UserRepository) CountAdminsInTenant(ctx context.Context, tenantID string) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM users
+		 WHERE tenant_id = $1 AND role = 'admin' AND is_active = TRUE AND deleted_at IS NULL`,
+		tenantID).Scan(&n)
+	return n, err
+}
+
+// SetActiveInTenant activates or deactivates a user within a tenant.
+func (r *UserRepository) SetActiveInTenant(ctx context.Context, tenantID, id string, active bool) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE users SET is_active = $1, updated_at = now()
+		 WHERE id = $2 AND tenant_id = $3 AND deleted_at IS NULL`,
+		active, id, tenantID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

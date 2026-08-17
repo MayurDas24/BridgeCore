@@ -1,0 +1,28 @@
+"""
+A tenant-scoped machine credential.
+
+There is no hash field, and no field that returns the secret. The GraphQL type
+is mapped from a dedicated struct rather than from the database model, so
+`key_hash` has nowhere to appear even by accident.
+"""
+type APIKey {
+  id: ID!
+  name: String!
+  prefix: String!
+  lastFour: String!
+  isActive: Boolean!
+  lastUsedAt: DateTime
+  expiresAt: DateTime
+  revokedAt: DateTime
+  createdAt: DateTime!
+}
+
+"""Returned once, at creation or rotation. The plaintext is never stored."""
+type GeneratedAPIKey {
+  apiKey: APIKey!
+  plaintext: String!
+}
+
+input GenerateAPIKeyInput {
+  name: String
+}

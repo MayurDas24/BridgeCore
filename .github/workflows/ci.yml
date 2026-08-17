@@ -1,0 +1,256 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same branch: a PR that is pushed to three
+# times in a minute does not need three full pipelines.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.22"
+
+permissions:
+  contents: read
+
+jobs:
+  static-analysis:
+    name: Format, vet, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Verify go.mod and go.sum are tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum || {
+            echo "::error::go.mod/go.sum are not tidy. Run 'go mod tidy' and commit the result."
+            exit 1
+          }
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -s -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::These files are not gofmt-clean. Run 'make fmt'."
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Build every package, including the integration build tag
+        run: |
+          go build ./...
+          go vet -tags=integration ./integration/...
+
+  unit-tests:
+    name: Unit tests (race detector)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # -race is not optional for this codebase: usage metering writes from a
+      # goroutine per request, the export worker runs concurrently with the API,
+      # and the DataLoader cache is shared across resolvers. Those are exactly
+      # the places a data race hides until production load finds it.
+      - name: go test -race
+        run: go test -race -count=1 ./...
+
+      - name: Coverage report
+        run: |
+          go test -coverprofile=coverage.out ./... > /dev/null
+          go tool cover -func=coverage.out | tail -25
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+
+  integration-tests:
+    name: Integration tests (PostgreSQL + Redis)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bridgecore
+          POSTGRES_PASSWORD: bridgecore
+          POSTGRES_DB: bridgecore
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U bridgecore"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build the server
+        run: go build -o bin/bridgecore-api ./cmd/api
+
+      - name: Start the server
+        env:
+          APP_ENV: development
+          APP_PORT: "8080"
+          DB_HOST: localhost
+          DB_PORT: "5432"
+          DB_USER: bridgecore
+          DB_PASSWORD: bridgecore
+          DB_NAME: bridgecore
+          DB_SSLMODE: disable
+          REDIS_ADDR: localhost:6379
+          JWT_ACCESS_SECRET: ci-access-secret-not-a-real-secret-value
+          JWT_REFRESH_SECRET: ci-refresh-secret-not-a-real-secret-value
+          PLATFORM_ADMIN_TOKEN: ci-platform-token-not-a-real-secret
+          EXPORT_BACKEND: local
+          EXPORT_LOCAL_DIR: ./var/exports
+          EXPORT_IN_PROCESS_WORKER: "true"
+          # Deliberately low, so the complexity test asserts against a real
+          # limit rather than one it has to work hard to exceed.
+          GRAPHQL_MAX_COMPLEXITY: "400"
+          GRAPHQL_MAX_DEPTH: "8"
+        run: |
+          ./bin/bridgecore-api > server.log 2>&1 &
+          echo $! > server.pid
+          for i in $(seq 1 40); do
+            if curl -fsS http://localhost:8080/ready > /dev/null 2>&1; then
+              echo "server is ready"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::server never became ready"
+          cat server.log
+          exit 1
+
+      - name: Run integration tests
+        env:
+          BRIDGECORE_BASE_URL: http://localhost:8080
+        run: go test -tags=integration -count=1 -v ./integration/...
+
+      - name: Server logs
+        if: always()
+        run: |
+          echo "--- server.log ---"
+          cat server.log || true
+
+      - name: Stop the server
+        if: always()
+        run: kill "$(cat server.pid)" || true
+
+  docker-build:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build only — nothing is pushed from a pull request. Publishing happens
+      # in deploy.yml, on main, after this gate passes.
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: bridgecore:ci
+          build-args: |
+            VERSION=${{ github.sha }}
+            GIT_COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify the image runs and reports its version
+        run: |
+          docker run --rm --entrypoint /app/bridgecore-api bridgecore:ci --help 2>&1 | head -5 || true
+          # The image must be distroless: no shell to pivot with.
+          if docker run --rm --entrypoint /bin/sh bridgecore:ci -c "echo shell present" 2>/dev/null; then
+            echo "::error::the runtime image contains a shell; it should be distroless"
+            exit 1
+          fi
+          echo "confirmed: no shell in the runtime image"
+
+  terraform-validate:
+    name: Terraform format and validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: terraform fmt
+        run: terraform -chdir=infra/terraform fmt -check -recursive
+
+      # No backend and no credentials: this validates syntax and provider
+      # schemas only, so a PR from a fork cannot touch real infrastructure.
+      - name: terraform init (no backend)
+        run: terraform -chdir=infra/terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform -chdir=infra/terraform validate
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A committed .env is the single most common way a project like this
+      # leaks a credential, so it is a hard failure rather than a lint warning.
+      - name: Refuse committed environment files
+        run: |
+          if git ls-files --error-unmatch .env > /dev/null 2>&1; then
+            echo "::error::.env is tracked by git. Remove it and rely on .env.example."
+            exit 1
+          fi
+          echo "no tracked .env"
+
+      - name: Scan for obvious credential patterns
+        run: |
+          # Long-lived AWS access keys should never appear: production uses
+          # OIDC and ECS task roles instead.
+          if git grep -nE 'AKIA[0-9A-Z]{16}' -- . ':!*.md' ':!.github/workflows/*'; then
+            echo "::error::a hardcoded AWS access key id was found"
+            exit 1
+          fi
+          if git grep -nE '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----' -- .; then
+            echo "::error::a private key was found in the repository"
+            exit 1
+          fi
+          echo "no obvious credentials found"

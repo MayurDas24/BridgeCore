@@ -1,0 +1,20 @@
+type Tenant {
+  id: ID!
+  name: String!
+  slug: String!
+  plan: Plan!
+  isActive: Boolean!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+"""
+Fields a tenant may change about itself.
+
+`plan` is absent by design. A tenant's plan drives its feature entitlements,
+so a tenant able to write its own plan could grant itself any feature. Plan
+changes are a billing operation on the platform control plane.
+"""
+input UpdateTenantInput {
+  name: String!
+}

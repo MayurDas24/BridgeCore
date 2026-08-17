@@ -110,3 +110,50 @@ func (r *UsageRepository) SummaryByTenant(ctx context.Context, tenantID string, 
 	}
 	return summaries, rows.Err()
 }
+
+// EachForExport streams a tenant's usage rows to fn in ascending time order,
+// stopping after limit rows.
+//
+// Exports are the one read path whose result set is deliberately large, so
+// it is the one path that must not build a slice of every row first: a
+// 500,000-row export materialized in memory is how a worker gets OOM-killed
+// mid-job. Rows are handed to the caller one at a time as they arrive from
+// the driver, which lets the CSV writer stream straight into the object
+// store with a bounded footprint regardless of export size.
+func (r *UsageRepository) EachForExport(
+	ctx context.Context,
+	tenantID, endpointFilter, methodFilter string,
+	from, to *time.Time,
+	limit int,
+	fn func(*models.UsageLog) error,
+) (int, error) {
+	query := `
+		SELECT id, tenant_id, endpoint, method, status_code, latency_ms, request_id, created_at
+		FROM usage_logs
+		WHERE tenant_id = $1
+		  AND ($2 = '' OR endpoint ILIKE '%' || $2 || '%')
+		  AND ($3 = '' OR method = $3)
+		  AND ($4::timestamptz IS NULL OR created_at >= $4)
+		  AND ($5::timestamptz IS NULL OR created_at <= $5)
+		ORDER BY created_at ASC
+		LIMIT $6`
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID, endpointFilter, methodFilter, from, to, limit)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	count := 0
+	for rows.Next() {
+		var u models.UsageLog
+		if err := rows.Scan(&u.ID, &u.TenantID, &u.Endpoint, &u.Method, &u.StatusCode, &u.LatencyMS, &u.RequestID, &u.CreatedAt); err != nil {
+			return count, err
+		}
+		if err := fn(&u); err != nil {
+			return count, err
+		}
+		count++
+	}
+	return count, rows.Err()
+}

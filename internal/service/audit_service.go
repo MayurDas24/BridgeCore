@@ -64,3 +64,9 @@ func (s *AuditService) Get(ctx context.Context, id string) (*models.AuditLog, er
 func (s *AuditService) List(ctx context.Context, tenantID, eventFilter string, page, pageSize int) ([]*models.AuditLog, int64, error) {
 	return s.repo.ListByTenant(ctx, tenantID, eventFilter, page, pageSize)
 }
+
+// GetForTenant loads one audit record scoped to a tenant. The unscoped Get
+// remains for platform tooling only.
+func (s *AuditService) GetForTenant(ctx context.Context, tenantID, id string) (*models.AuditLog, error) {
+	return s.repo.GetByIDInTenant(ctx, tenantID, id)
+}

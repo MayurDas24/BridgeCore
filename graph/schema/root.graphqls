@@ -1,0 +1,64 @@
+scalar DateTime
+
+"""Platform RBAC role. Ordering is ADMIN > DEVELOPER > VIEWER."""
+enum Role {
+  ADMIN
+  DEVELOPER
+  VIEWER
+}
+
+"""Subscription tier, which determines default feature entitlements."""
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+"""Pagination envelope shared by every connection type."""
+type PageInfo {
+  page: Int!
+  pageSize: Int!
+  totalCount: Int!
+  totalPages: Int!
+  hasNext: Boolean!
+}
+
+type Query {
+  """The authenticated user. Null for API-key credentials, which authenticate a tenant rather than a person."""
+  me: User
+
+  """The caller's own tenant. There is deliberately no argument to request another one."""
+  tenant: Tenant!
+
+  users(page: Int, pageSize: Int): UserConnection!
+
+  """An ID belonging to another tenant resolves to null, never to a different tenant's user."""
+  user(id: ID!): User
+
+  features: [Feature!]!
+  myFeatures: [String!]!
+
+  apiKeys: [APIKey!]! @requiresRole(role: DEVELOPER)
+
+  usage(endpoint: String, method: String, from: DateTime, to: DateTime, page: Int, pageSize: Int): UsageConnection!
+  usageSummary(from: DateTime, to: DateTime): [UsageSummary!]!
+
+  auditLogs(event: String, page: Int, pageSize: Int): AuditConnection! @requiresRole(role: DEVELOPER)
+
+  exportJobs(page: Int, pageSize: Int): ExportJobConnection! @requiresFeature(feature: "usage.export")
+  exportJob(id: ID!): ExportJob @requiresFeature(feature: "usage.export")
+
+  """A freshly minted, expiring download URL. Never stored, so it cannot outlive its TTL."""
+  exportDownload(id: ID!): Download @requiresFeature(feature: "usage.export")
+}
+
+type Mutation {
+  updateTenant(input: UpdateTenantInput!): Tenant! @requiresRole(role: ADMIN)
+  updateUserRole(input: UpdateUserRoleInput!): User! @requiresRole(role: ADMIN)
+
+  generateApiKey(input: GenerateAPIKeyInput): GeneratedAPIKey! @requiresRole(role: DEVELOPER)
+  rotateApiKey(id: ID!): GeneratedAPIKey! @requiresRole(role: DEVELOPER)
+  deactivateApiKey(id: ID!): Boolean! @requiresRole(role: DEVELOPER)
+
+  requestUsageExport(input: RequestExportInput): ExportJob! @requiresFeature(feature: "usage.export")
+}

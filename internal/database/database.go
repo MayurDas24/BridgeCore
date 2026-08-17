@@ -7,6 +7,7 @@ package database
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"fmt"
 	"time"
@@ -35,9 +36,16 @@ func NewPostgres(cfg config.DatabaseConfig) (*DB, error) {
 		return nil, fmt.Errorf("database: open postgres: %w", err)
 	}
 
+	// Connection pool sizing is configuration, not a constant: RDS enforces a
+	// hard max_connections, and the pool ceiling multiplied by the number of
+	// ECS tasks must stay under it or new tasks fail to connect during a
+	// scale-out.
 	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
 	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
 	sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+	// Recycling idle connections matters behind RDS Proxy and after a failover,
+	// where a connection can remain open but point at a demoted instance.
+	sqlDB.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -50,15 +58,28 @@ func NewPostgres(cfg config.DatabaseConfig) (*DB, error) {
 }
 
 // NewRedis opens a Redis client and validates connectivity with a PING.
-func NewRedis(addr, password string, db int) (*Redis, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:         addr,
-		Password:     password,
-		DB:           db,
+//
+// TLS is configurable because ElastiCache with in-transit encryption enabled
+// requires it, while a local Docker Redis does not offer it at all.
+func NewRedis(cfg config.RedisConfig) (*Redis, error) {
+	opts := &redis.Options{
+		Addr:         cfg.Addr,
+		Password:     cfg.Password,
+		DB:           cfg.DB,
 		DialTimeout:  5 * time.Second,
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,
-	})
+		// Redis backs rate limiting, which is on the hot path of every
+		// request, so the pool is sized to absorb bursts rather than serialize
+		// them behind a handful of connections.
+		PoolSize:     20,
+		MinIdleConns: 5,
+	}
+	if cfg.TLS {
+		opts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+
+	client := redis.NewClient(opts)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

@@ -1,0 +1,23 @@
+"""
+An immutable record of a security- or business-relevant action.
+
+There is no mutation that writes one: audit records are produced only as a
+side effect of the action they describe, and the table rejects UPDATE and
+DELETE at the database level.
+"""
+type AuditEntry {
+  id: ID!
+  event: String!
+  actorId: ID
+  endpoint: String
+  ipAddress: String
+  userAgent: String
+  """Event metadata, serialized as a JSON string."""
+  metadata: String
+  createdAt: DateTime!
+}
+
+type AuditConnection {
+  nodes: [AuditEntry!]!
+  pageInfo: PageInfo!
+}

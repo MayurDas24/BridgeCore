@@ -14,11 +14,22 @@ servers:
 tags:
   - name: auth
   - name: tenants
+    description: >
+      The caller's own tenant only. Any other tenant id returns 404 rather than
+      403, so this API cannot be used to discover which tenant ids exist.
   - name: users
   - name: entitlements
   - name: apikeys
   - name: usage
   - name: audit
+  - name: platform
+    description: >
+      Cross-tenant control plane. Authenticated with the X-Platform-Token
+      operator credential, never with a customer JWT — no tenant credential,
+      however privileged inside its own tenant, can reach these operations.
+      Returns 404 when the token is absent or wrong, so the control plane does
+      not advertise its own existence.
+  - name: graphql
   - name: health
 
 components:
@@ -31,6 +42,14 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
+    PlatformToken:
+      type: apiKey
+      in: header
+      name: X-Platform-Token
+      description: >
+        Platform operator credential for the cross-tenant control plane.
+        Compared in constant time. Deliberately not derivable from any
+        customer login.
   schemas:
     Envelope:
       type: object
@@ -192,10 +211,21 @@ paths:
       responses:
         "200": { description: OK }
 
-  /api/v1/tenants:
-    post:
+  /api/v1/tenant:
+    get:
       tags: [tenants]
-      summary: Create a tenant (admin only)
+      summary: Get the authenticated caller's tenant
+      security: [{ BearerAuth: [] }, { ApiKeyAuth: [] }]
+      responses:
+        "200": { description: OK }
+    patch:
+      tags: [tenants]
+      summary: Update the caller's own tenant profile (admin only)
+      description: >
+        Only the display name is mutable. `plan` is absent by design: a tenant's
+        plan determines its feature entitlements, so a tenant able to write its
+        own plan could grant itself any feature. Plan changes are a platform
+        operation.
       security: [{ BearerAuth: [] }]
       requestBody:
         required: true
@@ -203,35 +233,32 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, slug]
               properties:
                 name: { type: string }
-                slug: { type: string }
-                plan: { type: string, enum: [free, pro, enterprise] }
       responses:
-        "201": { description: Created }
+        "200": { description: OK }
+        "403": { description: Requires the admin role }
+
+  /api/v1/tenants:
     get:
       tags: [tenants]
-      summary: List tenants (admin only)
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: query
-          name: search
-          schema: { type: string }
-        - in: query
-          name: page
-          schema: { type: integer }
-        - in: query
-          name: page_size
-          schema: { type: integer }
+      summary: List tenants visible to the caller
+      description: >
+        Always returns exactly the caller's own tenant. Retained for API
+        compatibility; prefer GET /api/v1/tenant.
+      security: [{ BearerAuth: [] }, { ApiKeyAuth: [] }]
       responses:
         "200": { description: OK }
 
   /api/v1/tenants/{id}:
     get:
       tags: [tenants]
-      summary: Get a tenant by ID
-      security: [{ BearerAuth: [] }]
+      summary: Get a tenant by id (only the caller's own resolves)
+      description: >
+        Any id other than the caller's own returns 404, not 403. A 403 would
+        confirm that the resource exists, which is enough to enumerate other
+        tenants' ids.
+      security: [{ BearerAuth: [] }, { ApiKeyAuth: [] }]
       parameters:
         - in: path
           name: id
@@ -239,29 +266,7 @@ paths:
           schema: { type: string }
       responses:
         "200": { description: OK }
-        "404": { description: Not found }
-    put:
-      tags: [tenants]
-      summary: Update a tenant (admin only)
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string }
-      responses:
-        "200": { description: OK }
-    delete:
-      tags: [tenants]
-      summary: Soft-delete a tenant (admin only)
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string }
-      responses:
-        "200": { description: OK }
+        "404": { description: Not found, or belongs to another tenant }
 
   /api/v1/users:
     get:
@@ -270,6 +275,58 @@ paths:
       security: [{ BearerAuth: [] }]
       responses:
         "200": { description: OK }
+
+  /api/v1/users/me:
+    get:
+      tags: [users]
+      summary: Get the authenticated user
+      description: >
+        Returns 400 for API-key credentials, which authenticate a tenant rather
+        than a person.
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: OK }
+
+  /api/v1/users/{id}:
+    get:
+      tags: [users]
+      summary: Get one user in the caller's tenant
+      security: [{ BearerAuth: [] }, { ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+        "404": { description: Not found, or belongs to another tenant }
+
+  /api/v1/users/{id}/status:
+    patch:
+      tags: [users]
+      summary: Activate or deactivate a user (admin only)
+      description: >
+        The last remaining admin of a tenant cannot be deactivated, which would
+        leave the tenant unadministrable.
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [is_active]
+              properties:
+                is_active: { type: boolean }
+      responses:
+        "200": { description: OK }
+        "403": { description: Requires the admin role }
+        "409": { description: Would remove the last admin }
 
   /api/v1/users/{id}/role:
     patch:
@@ -306,25 +363,6 @@ paths:
       tags: [entitlements]
       summary: List features enabled for the current tenant
       security: [{ BearerAuth: [] }]
-      responses:
-        "200": { description: OK }
-
-  /api/v1/features/grant:
-    post:
-      tags: [entitlements]
-      summary: Grant or revoke a feature for a tenant (admin only)
-      security: [{ BearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [tenant_id, feature_key, enabled]
-              properties:
-                tenant_id: { type: string }
-                feature_key: { type: string }
-                enabled: { type: boolean }
       responses:
         "200": { description: OK }
 
@@ -403,21 +441,110 @@ paths:
       responses:
         "200": { description: OK }
 
-  /api/v1/usage/export:
+  /api/v1/usage/exports:
+    post:
+      tags: [usage]
+      summary: Request an asynchronous usage export
+      description: >
+        Requires the "usage.export" feature entitlement (Pro/Enterprise),
+        enforced by middleware before the handler runs. Returns 202 with a job
+        you can poll — the previous synchronous CSV endpoint held a connection
+        open while paging the whole usage table, which outlives the load
+        balancer's idle timeout for a large tenant and repeats all the work on
+        retry.
+      security: [{ BearerAuth: [] }, { ApiKeyAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                endpoint: { type: string }
+                method: { type: string }
+                from: { type: string, format: date-time }
+                to: { type: string, format: date-time }
+      responses:
+        "202": { description: Export queued }
+        "403": { description: Plan does not include this feature }
     get:
       tags: [usage]
-      summary: >
-        Export usage records as CSV. Requires the "usage.export" feature
-        entitlement (Pro/Enterprise plans) — gated by middleware before
-        the handler runs.
-      security: [{ BearerAuth: [], ApiKeyAuth: [] }]
+      summary: List the caller tenant's export jobs
+      security: [{ BearerAuth: [] }, { ApiKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer }
+        - in: query
+          name: page_size
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+        "403": { description: Plan does not include this feature }
+
+  /api/v1/usage/exports/{id}:
+    get:
+      tags: [usage]
+      summary: Get one export job, including a download URL when complete
+      security: [{ BearerAuth: [] }, { ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+        "404": { description: Not found, or belongs to another tenant }
+
+  /api/v1/usage/exports/{id}/download:
+    get:
+      tags: [usage]
+      summary: Mint a short-lived download URL for a completed export
+      description: >
+        The URL is generated per request and never stored, so it always expires
+        and a replayed old response is not a usable capability. With the S3
+        backend this is a presigned URL and the bytes never pass through the
+        API.
+      security: [{ BearerAuth: [] }, { ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Download URL created }
+        "409": { description: The export is not complete }
+
+  /api/v1/usage/exports/download:
+    get:
+      tags: [usage]
+      summary: Serve a signed export object (local object-store backend only)
+      description: >
+        Deliberately unauthenticated: the HMAC signature in the URL is the
+        capability, exactly as with an S3 presigned URL, which is what lets a
+        browser follow the link. The signature covers both the object key and
+        the expiry, so neither can be edited to reach another tenant's export or
+        to extend the window.
+      parameters:
+        - in: query
+          name: key
+          required: true
+          schema: { type: string }
+        - in: query
+          name: expires
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: signature
+          required: true
+          schema: { type: string }
       responses:
         "200":
           description: CSV file
           content:
             text/csv:
               schema: { type: string }
-        "403": { description: Plan does not include this feature }
+        "403": { description: Link expired or altered }
 
   /api/v1/audit:
     get:
@@ -450,3 +577,201 @@ paths:
       responses:
         "200": { description: OK }
         "404": { description: Not found }
+
+  /graphql:
+    post:
+      tags: [graphql]
+      summary: Execute a GraphQL query or mutation
+      description: >
+        A second transport over the same service layer, not a second
+        application: resolvers call the same services the REST handlers call and
+        hold no database handle, so every tenancy guard, RBAC rule and
+        entitlement check applies identically. The endpoint sits behind the same
+        middleware chain as REST, so requests are authenticated, rate limited,
+        metered and correlated the same way.
+
+
+        Documents are analysed before execution and rejected on depth,
+        complexity or size with the code QUERY_REJECTED. A variable page size is
+        costed at the configured maximum, because the value is unknown until
+        execution. The response carries X-GraphQL-Complexity.
+
+
+        POST only: a query in a URL lands in access logs, proxy caches and
+        browser history, and a mutation over GET is trivially CSRF-able.
+        Errors appear in the errors array with HTTP 200 per the GraphQL
+        specification, carrying the same stable codes as the REST envelope in
+        extensions.code.
+
+
+        The SDL contract is published under graph/schema/.
+      security: [{ BearerAuth: [] }, { ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string }
+                operationName: { type: string }
+                variables: { type: object }
+            example:
+              query: "{ me { email role } tenant { name plan } }"
+      responses:
+        "200":
+          description: >
+            A GraphQL response. May contain data, errors, or both — a partial
+            result is still a result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, nullable: true }
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        message: { type: string }
+                        extensions:
+                          type: object
+                          properties:
+                            code: { type: string }
+                            status: { type: integer }
+        "400": { description: Malformed request body, or a GET query attempt }
+        "401": { description: Missing or invalid credential }
+    get:
+      tags: [graphql]
+      summary: GraphiQL IDE (non-production only)
+      description: >
+        Served only when GRAPHQL_PLAYGROUND is enabled, which configuration
+        validation forbids in production. Returns 404 otherwise.
+      responses:
+        "200":
+          description: HTML IDE
+          content:
+            text/html:
+              schema: { type: string }
+        "404": { description: Playground disabled }
+
+  /api/v1/platform/tenants:
+    post:
+      tags: [platform]
+      summary: Provision a tenant
+      security: [{ PlatformToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, slug]
+              properties:
+                name: { type: string }
+                slug: { type: string }
+                plan: { type: string, enum: [free, pro, enterprise] }
+      responses:
+        "201": { description: Created }
+        "404": { description: Missing or invalid operator token }
+        "409": { description: Slug already taken }
+    get:
+      tags: [platform]
+      summary: List every tenant on the platform
+      security: [{ PlatformToken: [] }]
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer }
+        - in: query
+          name: page_size
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+        "404": { description: Missing or invalid operator token }
+
+  /api/v1/platform/tenants/{id}:
+    get:
+      tags: [platform]
+      summary: Get any tenant by id
+      security: [{ PlatformToken: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+        "404": { description: Not found, or missing operator token }
+    put:
+      tags: [platform]
+      summary: Update any tenant, including its plan
+      description: >
+        This is where plan changes live. A plan determines feature entitlements,
+        so it is a billing operation rather than a tenant-editable field.
+      security: [{ PlatformToken: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                plan: { type: string, enum: [free, pro, enterprise] }
+                is_active:
+                  type: boolean
+                  description: >
+                    Suspension takes effect on the tenant's next request, because
+                    authentication re-reads the tenant row rather than trusting
+                    the token.
+      responses:
+        "200": { description: OK }
+        "404": { description: Not found, or missing operator token }
+    delete:
+      tags: [platform]
+      summary: Soft-delete any tenant
+      security: [{ PlatformToken: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+        "404": { description: Not found, or missing operator token }
+
+  /api/v1/platform/features/grant:
+    post:
+      tags: [platform]
+      summary: Grant or revoke a feature for any tenant
+      description: >
+        This endpoint previously accepted a tenant_id from any authenticated
+        tenant admin, which allowed a tenant to grant itself Enterprise
+        features. It now requires the platform operator token, so no customer
+        credential can reach it. Audited as feature.granted / feature.revoked.
+      security: [{ PlatformToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_id, feature_key, enabled]
+              properties:
+                tenant_id: { type: string }
+                feature_key: { type: string }
+                enabled: { type: boolean }
+      responses:
+        "200": { description: OK }
+        "404": { description: Missing or invalid operator token }

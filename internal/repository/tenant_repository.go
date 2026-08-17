@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 
+	"github.com/lib/pq"
+
 	"github.com/bridgecore/bridgecore/internal/database"
 	"github.com/bridgecore/bridgecore/internal/models"
 )
@@ -129,22 +131,60 @@ func scanTenant(row rowScanner) (*models.Tenant, error) {
 	return &t, nil
 }
 
-func isUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	return containsAny(err.Error(), "unique constraint", "duplicate key")
-}
+// pgUniqueViolation is PostgreSQL's SQLSTATE for a unique constraint
+// violation. Matching on the code rather than on the error text keeps this
+// working across PostgreSQL versions and server locales — an error string
+// is a human-readable message, not an API.
+const pgUniqueViolation = "23505"
 
-func containsAny(s string, subs ...string) bool {
-	for _, sub := range subs {
-		if len(s) >= len(sub) {
-			for i := 0; i+len(sub) <= len(s); i++ {
-				if s[i:i+len(sub)] == sub {
-					return true
-				}
-			}
-		}
+// pgForeignKeyViolation is SQLSTATE for a foreign key violation, which in
+// BridgeCore means the caller referenced a tenant, user, or feature that
+// does not exist.
+const pgForeignKeyViolation = "23503"
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pq.Error
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == pgUniqueViolation
 	}
 	return false
+}
+
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pq.Error
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == pgForeignKeyViolation
+	}
+	return false
+}
+
+// ListByIDs loads many tenants in a single round trip. This is the batch
+// function behind the GraphQL DataLoader: resolving `users { tenant { … } }`
+// for a page of 100 users issues one query here instead of 100 point reads
+// (the N+1 problem).
+func (r *TenantRepository) ListByIDs(ctx context.Context, ids []string) ([]*models.Tenant, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	query := `
+		SELECT id, name, slug, plan, is_active, created_at, updated_at, deleted_at
+		FROM tenants
+		WHERE id = ANY($1) AND deleted_at IS NULL`
+
+	rows, err := r.db.QueryContext(ctx, query, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tenants []*models.Tenant
+	for rows.Next() {
+		t, err := scanTenant(rows)
+		if err != nil {
+			return nil, err
+		}
+		tenants = append(tenants, t)
+	}
+	return tenants, rows.Err()
 }

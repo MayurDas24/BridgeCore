@@ -90,3 +90,15 @@ func scanAudit(row rowScanner) (*models.AuditLog, error) {
 	}
 	return &a, nil
 }
+
+// GetByIDInTenant is the tenant-scoped read for a single audit record.
+func (r *AuditRepository) GetByIDInTenant(ctx context.Context, tenantID, id string) (*models.AuditLog, error) {
+	query := `
+		SELECT id, tenant_id, actor_id, event, metadata, endpoint, ip_address, user_agent, created_at
+		FROM audit_logs WHERE id = $1 AND tenant_id = $2`
+	a, err := scanAudit(r.db.QueryRowContext(ctx, query, id, tenantID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return a, err
+}

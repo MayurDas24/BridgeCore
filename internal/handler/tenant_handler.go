@@ -1,19 +1,23 @@
 package handler
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/bridgecore/bridgecore/internal/middleware"
 	"github.com/bridgecore/bridgecore/internal/models"
 	"github.com/bridgecore/bridgecore/internal/service"
+	"github.com/bridgecore/bridgecore/internal/tenancy"
 	"github.com/bridgecore/bridgecore/pkg/response"
 )
 
-// TenantHandler exposes tenant CRUD endpoints. All operations are scoped:
-// admins may only manage their own tenant, except List which is a
-// platform-operator view intended for internal/admin tooling (still
-// requires an authenticated admin caller).
+// TenantHandler exposes the tenant-scoped tenant endpoints: a caller can
+// read and update its own tenant, and nothing else.
+//
+// Cross-tenant tenant management (provisioning, plan changes, deletion)
+// lives on PlatformHandler behind a separate operator credential. Before
+// this split, GET/PUT/DELETE /tenants/{id} accepted any tenant ID from any
+// authenticated admin, which let one customer read and modify another
+// customer's tenant record.
 type TenantHandler struct {
 	tenants *service.TenantService
 	audit   *service.AuditService
@@ -23,83 +27,27 @@ func NewTenantHandler(tenants *service.TenantService, audit *service.AuditServic
 	return &TenantHandler{tenants: tenants, audit: audit}
 }
 
-type createTenantRequest struct {
-	Name string      `json:"name"`
-	Slug string      `json:"slug"`
-	Plan models.Plan `json:"plan"`
-}
-
-// Create godoc
-// @Summary      Create a tenant
-// @Tags         tenants
-// @Security     BearerAuth
-// @Accept       json
-// @Produce      json
-// @Param        body body createTenantRequest true "Tenant payload"
-// @Success      201 {object} response.Envelope
-// @Router       /api/v1/tenants [post]
-func (h *TenantHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req createTenantRequest
-	if err := decodeJSON(r, &req); err != nil {
-		response.BadRequest(w, "invalid request body", err.Error())
-		return
-	}
-	if req.Name == "" || req.Slug == "" {
-		response.BadRequest(w, "name and slug are required", nil)
-		return
-	}
-
-	tenant, err := h.tenants.Create(r.Context(), service.CreateTenantInput{
-		Name: req.Name, Slug: req.Slug, Plan: req.Plan,
-	})
-	if err != nil {
-		h.handleError(w, err)
-		return
-	}
-
-	ac, _ := middleware.AuthFromContext(r.Context())
-	h.audit.Record(r.Context(), service.RecordInput{
-		TenantID:  &tenant.ID,
-		ActorID:   strPtrOrNil(ac.UserID),
-		Event:     models.EventTenantCreated,
-		Endpoint:  r.URL.Path,
-		IPAddress: r.RemoteAddr,
-		UserAgent: r.UserAgent(),
-	})
-
-	response.Created(w, "tenant created", tenant)
-}
-
-// List godoc
-// @Summary      List tenants
+// Current godoc
+// @Summary      Get the authenticated caller's tenant
 // @Tags         tenants
 // @Security     BearerAuth
 // @Produce      json
-// @Param        search query string false "Search by name or slug"
-// @Param        page query int false "Page number"
-// @Param        page_size query int false "Page size"
 // @Success      200 {object} response.Envelope
-// @Router       /api/v1/tenants [get]
-func (h *TenantHandler) List(w http.ResponseWriter, r *http.Request) {
-	search := r.URL.Query().Get("search")
-	page, pageSize := paginationParams(r)
+// @Router       /api/v1/tenant [get]
+func (h *TenantHandler) Current(w http.ResponseWriter, r *http.Request) {
+	scope := middleware.ScopeFromContext(r.Context())
 
-	tenants, total, err := h.tenants.List(r.Context(), search, page, pageSize)
+	tenant, err := h.tenants.Current(r.Context(), scope)
 	if err != nil {
-		response.InternalError(w, "failed to list tenants")
+		response.Fail(w, r, err)
 		return
 	}
-
-	response.OK(w, "tenants retrieved", response.ListResponse{
-		Items: tenants,
-		Meta: response.Meta{
-			Page: page, PageSize: pageSize, TotalCount: total, TotalPages: totalPages(total, pageSize),
-		},
-	})
+	response.OKWithRequest(w, r, "tenant retrieved", tenant)
 }
 
 // Get godoc
-// @Summary      Get a tenant by ID
+// @Summary      Get a tenant by ID (only the caller's own tenant resolves)
+// @Description  Any ID other than the caller's own returns 404, so this endpoint cannot be used to discover which tenant IDs exist.
 // @Tags         tenants
 // @Security     BearerAuth
 // @Produce      json
@@ -108,95 +56,94 @@ func (h *TenantHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Failure      404 {object} response.Envelope
 // @Router       /api/v1/tenants/{id} [get]
 func (h *TenantHandler) Get(w http.ResponseWriter, r *http.Request) {
+	scope := middleware.ScopeFromContext(r.Context())
 	id := r.PathValue("id")
-	tenant, err := h.tenants.Get(r.Context(), id)
+
+	tenant, err := h.tenants.GetForScope(r.Context(), scope, id)
 	if err != nil {
-		h.handleError(w, err)
+		h.auditIfCrossTenant(r, scope, id, err)
+		response.Fail(w, r, err)
 		return
 	}
-	response.OK(w, "tenant retrieved", tenant)
+	response.OKWithRequest(w, r, "tenant retrieved", tenant)
 }
 
-type updateTenantRequest struct {
-	Name     *string      `json:"name"`
-	Plan     *models.Plan `json:"plan"`
-	IsActive *bool        `json:"is_active"`
+// List godoc
+// @Summary      List tenants visible to the caller (always exactly its own)
+// @Tags         tenants
+// @Security     BearerAuth
+// @Produce      json
+// @Success      200 {object} response.Envelope
+// @Router       /api/v1/tenants [get]
+func (h *TenantHandler) List(w http.ResponseWriter, r *http.Request) {
+	scope := middleware.ScopeFromContext(r.Context())
+
+	tenants, total, err := h.tenants.ListForScope(r.Context(), scope)
+	if err != nil {
+		response.Fail(w, r, err)
+		return
+	}
+
+	response.OKWithRequest(w, r, "tenants retrieved", response.ListResponse{
+		Items: tenants,
+		Meta:  response.NewMeta(1, len(tenants), total),
+	})
+}
+
+type updateTenantSelfRequest struct {
+	Name *string `json:"name"`
 }
 
 // Update godoc
-// @Summary      Update a tenant
+// @Summary      Update the caller's own tenant profile
+// @Description  Only the display name is mutable here. Plan changes are a billing operation on the platform control plane, because a tenant that could set its own plan could grant itself any feature entitlement.
 // @Tags         tenants
 // @Security     BearerAuth
 // @Accept       json
 // @Produce      json
-// @Param        id path string true "Tenant ID"
-// @Param        body body updateTenantRequest true "Fields to update"
+// @Param        body body updateTenantSelfRequest true "Fields to update"
 // @Success      200 {object} response.Envelope
-// @Router       /api/v1/tenants/{id} [put]
+// @Router       /api/v1/tenant [patch]
 func (h *TenantHandler) Update(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-
-	var req updateTenantRequest
+	var req updateTenantSelfRequest
 	if err := decodeJSON(r, &req); err != nil {
-		response.BadRequest(w, "invalid request body", err.Error())
+		response.Fail(w, r, badBody(err))
 		return
 	}
 
-	tenant, err := h.tenants.Update(r.Context(), id, service.UpdateTenantInput{
-		Name: req.Name, Plan: req.Plan, IsActive: req.IsActive,
+	scope := middleware.ScopeFromContext(r.Context())
+
+	tenant, err := h.tenants.UpdateForScope(r.Context(), scope, scope.TenantID, service.UpdateTenantSelfInput{
+		Name: req.Name,
 	})
 	if err != nil {
-		h.handleError(w, err)
+		response.Fail(w, r, err)
 		return
 	}
 
-	ac, _ := middleware.AuthFromContext(r.Context())
 	h.audit.Record(r.Context(), service.RecordInput{
-		TenantID:  &tenant.ID,
-		ActorID:   strPtrOrNil(ac.UserID),
+		TenantID:  strPtrOrNil(tenant.ID),
+		ActorID:   strPtrOrNil(scope.UserID),
 		Event:     models.EventTenantUpdated,
 		Endpoint:  r.URL.Path,
 		IPAddress: r.RemoteAddr,
 		UserAgent: r.UserAgent(),
 	})
 
-	response.OK(w, "tenant updated", tenant)
+	response.OKWithRequest(w, r, "tenant updated", tenant)
 }
 
-// Delete godoc
-// @Summary      Soft-delete a tenant
-// @Tags         tenants
-// @Security     BearerAuth
-// @Param        id path string true "Tenant ID"
-// @Success      200 {object} response.Envelope
-// @Router       /api/v1/tenants/{id} [delete]
-func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if err := h.tenants.Delete(r.Context(), id); err != nil {
-		h.handleError(w, err)
+func (h *TenantHandler) auditIfCrossTenant(r *http.Request, scope tenancy.Scope, requestedID string, err error) {
+	if !tenancy.IsCrossTenant(err) {
 		return
 	}
-
-	ac, _ := middleware.AuthFromContext(r.Context())
 	h.audit.Record(r.Context(), service.RecordInput{
-		TenantID:  &id,
-		ActorID:   strPtrOrNil(ac.UserID),
-		Event:     models.EventTenantDeleted,
+		TenantID:  strPtrOrNil(scope.TenantID),
+		ActorID:   strPtrOrNil(scope.UserID),
+		Event:     models.EventCrossTenantDenied,
 		Endpoint:  r.URL.Path,
 		IPAddress: r.RemoteAddr,
 		UserAgent: r.UserAgent(),
+		Metadata:  map[string]any{"resource": "tenant", "requested_id": requestedID},
 	})
-
-	response.OK(w, "tenant deleted", nil)
-}
-
-func (h *TenantHandler) handleError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, service.ErrTenantNotFound):
-		response.NotFound(w, "tenant not found")
-	case errors.Is(err, service.ErrTenantSlugTaken):
-		response.Conflict(w, "a tenant with this slug already exists")
-	default:
-		response.InternalError(w, "operation failed")
-	}
 }

@@ -113,3 +113,45 @@ func scanAPIKey(row rowScanner) (*models.APIKey, error) {
 	}
 	return &k, nil
 }
+
+// GetByIDInTenant is the tenant-scoped read. The tenant predicate is in the
+// SQL, not in a post-hoc Go comparison.
+func (r *APIKeyRepository) GetByIDInTenant(ctx context.Context, tenantID, id string) (*models.APIKey, error) {
+	query := `
+		SELECT id, tenant_id, created_by, name, prefix, key_hash, last_four, is_active, last_used_at, expires_at, created_at, updated_at, revoked_at
+		FROM api_keys WHERE id = $1 AND tenant_id = $2`
+	k, err := scanAPIKey(r.db.QueryRowContext(ctx, query, id, tenantID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return k, err
+}
+
+// DeactivateInTenant revokes a key, refusing to touch keys outside the
+// caller's tenant.
+func (r *APIKeyRepository) DeactivateInTenant(ctx context.Context, tenantID, id string) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE api_keys SET is_active = FALSE, revoked_at = now(), updated_at = now()
+		 WHERE id = $1 AND tenant_id = $2 AND revoked_at IS NULL`,
+		id, tenantID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// CountActiveByTenant reports how many live keys a tenant holds, used to
+// enforce the single-key limit on plans without the "apikeys.multiple"
+// entitlement.
+func (r *APIKeyRepository) CountActiveByTenant(ctx context.Context, tenantID string) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM api_keys
+		 WHERE tenant_id = $1 AND is_active = TRUE AND revoked_at IS NULL`,
+		tenantID).Scan(&n)
+	return n, err
+}

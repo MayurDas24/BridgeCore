@@ -1,0 +1,62 @@
+type UsageRecord {
+  id: ID!
+  endpoint: String!
+  method: String!
+  statusCode: Int!
+  latencyMs: Int!
+  requestId: String
+  createdAt: DateTime!
+}
+
+type UsageConnection {
+  nodes: [UsageRecord!]!
+  pageInfo: PageInfo!
+}
+
+type UsageSummary {
+  endpoint: String!
+  method: String!
+  requestCount: Int!
+  errorCount: Int!
+  avgLatencyMs: Float!
+}
+
+enum ExportStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+type ExportJob {
+  id: ID!
+  status: ExportStatus!
+  endpoint: String
+  method: String
+  rowCount: Int!
+  sizeBytes: Int!
+  attempts: Int!
+  error: String
+  startedAt: DateTime
+  finishedAt: DateTime
+  createdAt: DateTime!
+}
+
+type ExportJobConnection {
+  nodes: [ExportJob!]!
+  pageInfo: PageInfo!
+}
+
+type Download {
+  url: String!
+  expiresAt: DateTime!
+  rowCount: Int!
+  sizeBytes: Int!
+}
+
+input RequestExportInput {
+  endpoint: String
+  method: String
+  from: DateTime
+  to: DateTime
+}

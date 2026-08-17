@@ -38,6 +38,7 @@ services:
       args:
         VERSION: ${APP_VERSION:-0.1.0-dev}
         BUILD_TIME: ${APP_BUILD_TIME:-unknown}
+        GIT_COMMIT: ${APP_GIT_COMMIT:-unknown}
     container_name: bridgecore-api
     restart: unless-stopped
     depends_on:
@@ -47,7 +48,7 @@ services:
         condition: service_healthy
     environment:
       APP_ENV: ${APP_ENV:-development}
-      APP_PORT: ${APP_PORT:-8080}
+      APP_PORT: 8080
       APP_VERSION: ${APP_VERSION:-0.1.0-dev}
       DB_HOST: postgres
       DB_PORT: 5432
@@ -60,15 +61,45 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me}
       API_KEY_PREFIX: ${API_KEY_PREFIX:-bc_live_}
+      PLATFORM_ADMIN_TOKEN: ${PLATFORM_ADMIN_TOKEN:-local-dev-platform-token-change-me-please}
       RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-120}
+      GRAPHQL_PLAYGROUND: "true"
+      GRAPHQL_INTROSPECTION: "true"
+      EXPORT_BACKEND: local
+      EXPORT_LOCAL_DIR: /data/exports
+      # The API does not run the worker here: the dedicated worker service
+      # below does, which mirrors the production topology.
+      EXPORT_IN_PROCESS_WORKER: "false"
+    volumes:
+      - bridgecore_exports:/data/exports
     ports:
-     - "${APP_PORT:-8080}:${APP_PORT:-8080}"
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:${APP_PORT:-8080}/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+      - "${APP_PORT:-8080}:8080"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bridgecore-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-bridgecore}
+      DB_PASSWORD: ${DB_PASSWORD:-bridgecore}
+      DB_NAME: ${DB_NAME:-bridgecore}
+      DB_SSLMODE: disable
+      REDIS_ADDR: redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me}
+      EXPORT_BACKEND: local
+      EXPORT_LOCAL_DIR: /data/exports
+    volumes:
+      - bridgecore_exports:/data/exports
+    entrypoint: ["/app/bridgecore-worker"]
 
   seed:
     build:
@@ -85,8 +116,11 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-bridgecore}
       DB_NAME: ${DB_NAME:-bridgecore}
       DB_SSLMODE: disable
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me}
     entrypoint: ["/app/bridgecore-seed"]
     restart: "no"
 
 volumes:
   bridgecore_postgres_data:
+  bridgecore_exports:

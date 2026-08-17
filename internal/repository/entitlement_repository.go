@@ -111,3 +111,39 @@ func (r *EntitlementRepository) ListTenantFeatures(ctx context.Context, tenantID
 	}
 	return keys, rows.Err()
 }
+
+// RevokeFeature removes an explicit tenant grant, falling the tenant back to
+// whatever its plan provides by default.
+func (r *EntitlementRepository) RevokeFeature(ctx context.Context, tenantID, featureID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`DELETE FROM tenant_features WHERE tenant_id = $1 AND feature_id = $2`,
+		tenantID, featureID)
+	return err
+}
+
+// ListTenantOverrides returns every explicit grant for a tenant, including
+// those explicitly disabled, so an operator can see the difference between
+// "not granted" and "granted then switched off".
+func (r *EntitlementRepository) ListTenantOverrides(ctx context.Context, tenantID string) (map[string]bool, error) {
+	query := `
+		SELECT f.key, tf.enabled
+		FROM tenant_features tf
+		JOIN features f ON f.id = tf.feature_id
+		WHERE tf.tenant_id = $1`
+	rows, err := r.db.QueryContext(ctx, query, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	overrides := map[string]bool{}
+	for rows.Next() {
+		var key string
+		var enabled bool
+		if err := rows.Scan(&key, &enabled); err != nil {
+			return nil, err
+		}
+		overrides[key] = enabled
+	}
+	return overrides, rows.Err()
+}

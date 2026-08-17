@@ -1,0 +1,14 @@
+"""
+Authentication is intentionally REST-only.
+
+Login, signup, refresh and logout live at `/api/v1/auth/*`. They are
+credential-handling endpoints that need to set precise HTTP status codes,
+participate in rate-limit accounting per outcome, and be trivially auditable
+in an access log — none of which GraphQL's single-endpoint, always-200 model
+expresses well. A GraphQL client authenticates by presenting the access token
+those endpoints issue:
+
+    Authorization: Bearer <access token>
+
+The same JWT middleware validates it for both transports.
+"""

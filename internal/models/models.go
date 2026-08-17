@@ -167,3 +167,83 @@ const (
 	EventFeatureAccessDenied = "feature.access_denied"
 	EventUnauthorizedRequest = "request.unauthorized"
 )
+
+// ExportStatus is the lifecycle state of an asynchronous usage export job.
+//
+// The state machine is deliberately explicit rather than a boolean "done"
+// flag, because an async pipeline has more than two outcomes: a job can be
+// in flight, it can fail transiently and be retried, and it can fail
+// permanently and need to be visible to an operator.
+//
+//	queued -> processing -> completed
+//	                 |
+//	                 +----> queued   (transient failure, attempts remaining)
+//	                 |
+//	                 +----> failed   (attempts exhausted)
+type ExportStatus string
+
+const (
+	ExportStatusQueued     ExportStatus = "queued"
+	ExportStatusProcessing ExportStatus = "processing"
+	ExportStatusCompleted  ExportStatus = "completed"
+	ExportStatusFailed     ExportStatus = "failed"
+)
+
+// Valid reports whether s is a known export status.
+func (s ExportStatus) Valid() bool {
+	switch s {
+	case ExportStatusQueued, ExportStatusProcessing, ExportStatusCompleted, ExportStatusFailed:
+		return true
+	}
+	return false
+}
+
+// Terminal reports whether no further transition is possible.
+func (s ExportStatus) Terminal() bool {
+	return s == ExportStatusCompleted || s == ExportStatusFailed
+}
+
+// ExportJob is one asynchronous usage-export request.
+//
+// The job row is the durable record of intent: the API creates it and
+// returns immediately, and a worker (in-process locally, a dedicated ECS
+// service or a Lambda consumer in production) claims and fulfils it. ObjectKey
+// points at the generated CSV in the object store; the download URL is
+// always minted on demand and short-lived, so the row never contains a
+// long-lived credential.
+type ExportJob struct {
+	ID          string       `json:"id"`
+	TenantID    string       `json:"tenant_id"`
+	RequestedBy *string      `json:"requested_by,omitempty"`
+	Status      ExportStatus `json:"status"`
+
+	// Filters captured at request time, so a replayed job produces the
+	// same output even if the caller's session is long gone.
+	Endpoint string     `json:"endpoint,omitempty"`
+	Method   string     `json:"method,omitempty"`
+	From     *time.Time `json:"from,omitempty"`
+	To       *time.Time `json:"to,omitempty"`
+
+	ObjectKey  string     `json:"object_key,omitempty"`
+	RowCount   int        `json:"row_count"`
+	SizeBytes  int64      `json:"size_bytes"`
+	Attempts   int        `json:"attempts"`
+	Error      string     `json:"error,omitempty"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
+// Additional audit events introduced by the async export pipeline and by
+// explicit cross-tenant denial tracking.
+const (
+	EventExportRequested   = "usage_export.requested"
+	EventExportCompleted   = "usage_export.completed"
+	EventExportFailed      = "usage_export.failed"
+	EventExportDownloaded  = "usage_export.downloaded"
+	EventFeatureGranted    = "feature.granted"
+	EventFeatureRevoked    = "feature.revoked"
+	EventCrossTenantDenied = "security.cross_tenant_denied"
+	EventGraphQLRejected   = "graphql.query_rejected"
+)

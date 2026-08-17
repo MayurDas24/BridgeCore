@@ -1,0 +1,11 @@
+"""
+Authorization directives.
+
+BridgeCore enforces these as resolver decorators applied where the schema is
+built (see graph/directives.go) rather than as SDL directives, so that the
+checks are literally the same code the REST middleware runs — one role
+ordering, one entitlement resolver, one set of audit records. The declarations
+below document the effective policy on each field.
+"""
+directive @requiresRole(role: Role!) on FIELD_DEFINITION
+directive @requiresFeature(feature: String!) on FIELD_DEFINITION

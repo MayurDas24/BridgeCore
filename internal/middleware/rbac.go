@@ -6,6 +6,7 @@ import (
 
 	"github.com/bridgecore/bridgecore/internal/models"
 	"github.com/bridgecore/bridgecore/internal/service"
+	"github.com/bridgecore/bridgecore/pkg/apierr"
 	"github.com/bridgecore/bridgecore/pkg/response"
 )
 
@@ -17,6 +18,13 @@ var roleRank = map[models.Role]int{
 	models.RoleAdmin:     3,
 }
 
+// RoleAtLeast reports whether role satisfies minRole. Exported so the
+// GraphQL authorization directives apply exactly the same ordering as the
+// REST middleware, rather than reimplementing it.
+func RoleAtLeast(role, minRole models.Role) bool {
+	return roleRank[role] >= roleRank[minRole]
+}
+
 // RequireRole builds middleware that only allows requests whose
 // authenticated role is at least minRole (admin > developer > viewer).
 // Must run after Auth middleware in the chain.
@@ -25,16 +33,15 @@ func RequireRole(audit *service.AuditService, minRole models.Role) func(http.Han
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ac, ok := AuthFromContext(r.Context())
 			if !ok {
-				response.Unauthorized(w, "authentication required")
+				response.Fail(w, r, apierr.Unauthenticated("authentication is required"))
 				return
 			}
 
-			if roleRank[ac.Role] < roleRank[minRole] {
+			if !RoleAtLeast(ac.Role, minRole) {
 				tenantID := ac.TenantID
-				actorID := ac.UserID
 				audit.Record(r.Context(), service.RecordInput{
 					TenantID:  &tenantID,
-					ActorID:   ptrOrNil(actorID),
+					ActorID:   ptrOrNil(ac.UserID),
 					Event:     models.EventFeatureAccessDenied,
 					Endpoint:  r.URL.Path,
 					IPAddress: clientIP(r),
@@ -45,7 +52,7 @@ func RequireRole(audit *service.AuditService, minRole models.Role) func(http.Han
 						"actual":   string(ac.Role),
 					},
 				})
-				response.Forbidden(w, "insufficient role permissions for this action")
+				response.Fail(w, r, apierr.Forbidden("this operation requires the %s role", minRole))
 				return
 			}
 
@@ -60,20 +67,25 @@ type EntitlementChecker interface {
 }
 
 // RequireFeature builds middleware that blocks the request unless the
-// authenticated tenant is entitled to featureKey, checking BEFORE the
-// request reaches the handler as required by the spec.
+// authenticated tenant is entitled to featureKey.
+//
+// The check runs before the handler, so an unentitled tenant never reaches
+// the code that would do the work — which means a plan boundary is enforced
+// by the routing table rather than by remembering to check inside each
+// handler. The same EntitlementChecker backs the GraphQL @requiresFeature
+// directive, so REST and GraphQL cannot drift apart.
 func RequireFeature(entitlements EntitlementChecker, audit *service.AuditService, featureKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ac, ok := AuthFromContext(r.Context())
 			if !ok {
-				response.Unauthorized(w, "authentication required")
+				response.Fail(w, r, apierr.Unauthenticated("authentication is required"))
 				return
 			}
 
 			has, err := entitlements.HasFeature(r.Context(), ac.TenantID, ac.TenantPlan, featureKey)
 			if err != nil {
-				response.InternalError(w, "failed to resolve feature entitlement")
+				response.Fail(w, r, apierr.Internal("failed to resolve feature entitlement").Wrap(err))
 				return
 			}
 			if !has {
@@ -87,7 +99,7 @@ func RequireFeature(entitlements EntitlementChecker, audit *service.AuditService
 					UserAgent: r.UserAgent(),
 					Metadata:  map[string]any{"feature": featureKey, "plan": string(ac.TenantPlan)},
 				})
-				response.Forbidden(w, "your plan does not include this feature: "+featureKey)
+				response.Fail(w, r, apierr.FeatureRequired(featureKey))
 				return
 			}
 

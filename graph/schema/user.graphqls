@@ -1,0 +1,24 @@
+type User {
+  id: ID!
+  email: String!
+  firstName: String
+  lastName: String
+  role: Role!
+  isActive: Boolean!
+  lastLoginAt: DateTime
+  createdAt: DateTime!
+  updatedAt: DateTime!
+
+  """Batch-loaded via a DataLoader, so a page of users costs one tenant query rather than one per user."""
+  tenant: Tenant
+}
+
+type UserConnection {
+  nodes: [User!]!
+  pageInfo: PageInfo!
+}
+
+input UpdateUserRoleInput {
+  userId: ID!
+  role: Role!
+}

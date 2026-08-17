@@ -1,0 +1,202 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Existing image tag to deploy (leave blank to build from this commit)"
+        required: false
+
+# Serialise deployments: two concurrent ECS service updates race each other's
+# task definitions, and cancel-in-progress would abandon a half-finished
+# rollout. Queue instead.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: bridgecore
+  ECS_CLUSTER: bridgecore-cluster
+  ECS_SERVICE: bridgecore-api
+  ECS_WORKER_SERVICE: bridgecore-worker
+  CONTAINER_NAME: bridgecore-api
+
+permissions:
+  contents: read
+  # Required for the OIDC token exchange. No AWS access keys are stored in
+  # GitHub: the workflow presents a short-lived OIDC token, AWS verifies it
+  # against a trust policy scoped to this repository, and returns credentials
+  # that expire within the hour. A stolen repository secret would be reusable
+  # indefinitely; a stolen OIDC token is worthless minutes later.
+  id-token: write
+
+jobs:
+  build-and-push:
+    name: Build and push to ECR
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      # Re-run the gate here rather than trusting that CI passed on the merge
+      # commit. This is the last point at which a bad build is cheap to stop.
+      - name: Test before shipping
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: bridgecore-deploy-${{ github.run_id }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push the image
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          # Tag with the commit SHA, never only with "latest": a mutable tag
+          # makes it impossible to say what is actually running, and impossible
+          # to roll back to a specific build.
+          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          docker buildx build \
+            --build-arg VERSION="${{ github.sha }}" \
+            --build-arg GIT_COMMIT="${{ github.sha }}" \
+            --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --tag "$IMAGE" \
+            --tag "$REGISTRY/${{ env.ECR_REPOSITORY }}:latest" \
+            --push .
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy to ECS Fargate
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: bridgecore-deploy-${{ github.run_id }}
+
+      - name: Record the currently deployed task definition
+        id: previous
+        run: |
+          # Captured before the update so a rollback has a concrete target
+          # rather than "whatever was there before, probably".
+          PREVIOUS=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].taskDefinition' --output text)
+          echo "task_definition=$PREVIOUS" >> "$GITHUB_OUTPUT"
+          echo "rolling back to $PREVIOUS if this deploy fails"
+
+      - name: Render the new task definition
+        id: render
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.ECS_SERVICE }} \
+            --query 'taskDefinition' > task-definition.json
+
+          # Strip the read-only fields AWS returns but rejects on register.
+          python3 - <<'PY'
+          import json
+          with open("task-definition.json") as f:
+              td = json.load(f)
+          for key in ("taskDefinitionArn", "revision", "status", "requiresAttributes",
+                      "compatibilities", "registeredAt", "registeredBy", "deregisteredAt"):
+              td.pop(key, None)
+          image = "${{ needs.build-and-push.outputs.image }}"
+          for container in td.get("containerDefinitions", []):
+              if container["name"] == "${{ env.CONTAINER_NAME }}":
+                  container["image"] = image
+          with open("task-definition.json", "w") as f:
+              json.dump(td, f, indent=2)
+          PY
+
+      - name: Deploy the API service and wait for stability
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: task-definition.json
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          # ECS replaces tasks one batch at a time and only shifts traffic to a
+          # task the ALB target group reports healthy. Combined with the
+          # circuit breaker configured in Terraform, a build that fails its
+          # health check never becomes the active version — the deployment is
+          # rolled back automatically instead of taking production with it.
+          wait-for-service-stability: true
+          wait-for-minutes: 10
+
+      - name: Deploy the export worker service
+        continue-on-error: true
+        run: |
+          # The worker shares the image but runs a different entrypoint. It is
+          # non-blocking: exports lagging is a degradation, not an outage, so a
+          # worker rollout problem must not fail an otherwise-good API deploy.
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_WORKER_SERVICE }} \
+            --force-new-deployment > /dev/null
+          echo "worker service redeployment requested"
+
+      - name: Post-deployment smoke test
+        id: smoke
+        env:
+          BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+        run: |
+          set -e
+          echo "checking $BASE_URL/health"
+          for i in $(seq 1 20); do
+            if curl -fsS "$BASE_URL/health" | tee health.json | grep -q '"status":"healthy"'; then
+              echo "health check passed"
+              # Confirm the running version is the commit we just shipped,
+              # rather than a stale task that happened to answer.
+              if grep -q '${{ github.sha }}' health.json; then
+                echo "confirmed the deployed version is ${{ github.sha }}"
+              else
+                echo "::warning::health is green but the reported version does not match this commit"
+              fi
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::the deployed service did not report healthy"
+          exit 1
+
+      - name: Roll back on failure
+        if: failure()
+        run: |
+          echo "::error::deployment failed; rolling back to ${{ steps.previous.outputs.task_definition }}"
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.previous.outputs.task_definition }} \
+            --force-new-deployment > /dev/null
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+          echo "rollback complete"

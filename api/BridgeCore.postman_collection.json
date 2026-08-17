@@ -5,20 +5,68 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url", "value": "http://localhost:8080" },
-    { "key": "access_token", "value": "" },
-    { "key": "refresh_token", "value": "" },
-    { "key": "tenant_id", "value": "" },
-    { "key": "api_key", "value": "" },
-    { "key": "api_key_id", "value": "" }
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "refresh_token",
+      "value": ""
+    },
+    {
+      "key": "tenant_id",
+      "value": ""
+    },
+    {
+      "key": "api_key",
+      "value": ""
+    },
+    {
+      "key": "api_key_id",
+      "value": ""
+    },
+    {
+      "key": "platform_token",
+      "value": "local-dev-platform-token-change-me-please"
+    },
+    {
+      "key": "user_id",
+      "value": ""
+    },
+    {
+      "key": "export_job_id",
+      "value": ""
+    }
   ],
   "item": [
     {
       "name": "Health",
       "item": [
-        { "name": "Health", "request": { "method": "GET", "url": "{{base_url}}/health" } },
-        { "name": "Ready", "request": { "method": "GET", "url": "{{base_url}}/ready" } },
-        { "name": "Live", "request": { "method": "GET", "url": "{{base_url}}/live" } }
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health"
+          }
+        },
+        {
+          "name": "Ready",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/ready"
+          }
+        },
+        {
+          "name": "Live",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/live"
+          }
+        }
       ]
     },
     {
@@ -43,7 +91,12 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/api/v1/auth/signup",
             "body": {
               "mode": "raw",
@@ -69,7 +122,12 @@
           ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/api/v1/auth/login",
             "body": {
               "mode": "raw",
@@ -81,16 +139,29 @@
           "name": "Refresh",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{base_url}}/api/v1/auth/refresh",
-            "body": { "mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            }
           }
         },
         {
           "name": "Me",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/v1/auth/me"
           }
         },
@@ -98,7 +169,12 @@
           "name": "Logout",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/v1/auth/logout"
           }
         }
@@ -108,54 +184,112 @@
       "name": "Tenants",
       "item": [
         {
-          "name": "Create Tenant",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{access_token}}" }
-            ],
-            "url": "{{base_url}}/api/v1/tenants",
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"New Co\",\n  \"slug\": \"new-co\",\n  \"plan\": \"free\"\n}" }
-          }
-        },
-        {
-          "name": "List Tenants",
+          "name": "Get My Tenant",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
-            "url": "{{base_url}}/api/v1/tenants?page=1&page_size=20"
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tenant",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tenant"
+              ]
+            },
+            "description": "Returns the authenticated caller's tenant."
           }
         },
         {
-          "name": "Get Tenant",
+          "name": "Update My Tenant",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tenant",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tenant"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Corporation\"\n}"
+            },
+            "description": "Only the display name is mutable. There is no plan field: a tenant's plan determines its feature entitlements, so a writable plan would let a tenant grant itself any feature. Requires the admin role."
+          }
+        },
+        {
+          "name": "List Tenants (own only)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
-            "url": "{{base_url}}/api/v1/tenants/{{tenant_id}}"
-          }
-        },
-        {
-          "name": "Update Tenant",
-          "request": {
-            "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
             ],
-            "url": "{{base_url}}/api/v1/tenants/{{tenant_id}}",
-            "body": { "mode": "raw", "raw": "{\n  \"plan\": \"pro\"\n}" }
+            "url": {
+              "raw": "{{base_url}}/api/v1/tenants",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tenants"
+              ]
+            },
+            "description": "Always returns exactly one tenant \u2014 the caller's own."
           }
         },
         {
-          "name": "Delete Tenant",
+          "name": "Get Tenant by ID (own only)",
           "request": {
-            "method": "DELETE",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
-            "url": "{{base_url}}/api/v1/tenants/{{tenant_id}}"
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/tenants/{{tenant_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "tenants",
+                "{{tenant_id}}"
+              ]
+            },
+            "description": "Substitute another tenant's id here and the response is 404, not 403."
           }
         }
-      ]
+      ],
+      "description": "Tenant-scoped endpoints. The caller can only ever reach its own tenant; any other id returns 404 rather than 403, so this API cannot be used to discover which tenant ids exist. Cross-tenant management lives in the Platform folder behind a separate operator credential."
     },
     {
       "name": "Users",
@@ -164,8 +298,98 @@
           "name": "List Users",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
-            "url": "{{base_url}}/api/v1/users"
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/users?page=1&page_size=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Users in the caller's tenant only. page_size is clamped to the configured maximum rather than rejected, so an oversized request returns the ceiling plus a meta block indicating more pages."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "if (d && d.items && d.items.length) {",
+                  "  pm.collectionVariables.set(\"user_id\", d.items[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/users/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "me"
+              ]
+            },
+            "description": "Returns 400 for API-key credentials, which authenticate a tenant rather than a person."
+          }
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/users/{{user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{user_id}}"
+              ]
+            },
+            "description": "A user id from another tenant returns 404."
           }
         },
         {
@@ -173,12 +397,67 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "url": "{{base_url}}/api/v1/users/:id/role",
-            "variable": [{ "key": "id", "value": "" }],
-            "body": { "mode": "raw", "raw": "{\n  \"role\": \"developer\"\n}" }
+            "url": {
+              "raw": "{{base_url}}/api/v1/users/{{user_id}}/role",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{user_id}}",
+                "role"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"developer\"\n}"
+            },
+            "description": "Admin only. A caller cannot change their own role, and the last remaining admin of a tenant cannot be demoted."
+          }
+        },
+        {
+          "name": "Set User Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/users/{{user_id}}/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{user_id}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false\n}"
+            },
+            "description": "Admin only. The last remaining admin cannot be deactivated."
           }
         }
       ]
@@ -190,7 +469,12 @@
           "name": "List Feature Catalog",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/v1/features"
           }
         },
@@ -198,26 +482,17 @@
           "name": "List My Tenant's Features",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/v1/features/mine"
           }
-        },
-        {
-          "name": "Grant Feature",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{access_token}}" }
-            ],
-            "url": "{{base_url}}/api/v1/features/grant",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"tenant_id\": \"{{tenant_id}}\",\n  \"feature_key\": \"usage.export\",\n  \"enabled\": true\n}"
-            }
-          }
         }
-      ]
+      ],
+      "description": "Read-only for tenants. Granting is a platform operation \u2014 see the Platform folder."
     },
     {
       "name": "API Keys",
@@ -241,18 +516,32 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
             ],
             "url": "{{base_url}}/api/v1/apikeys",
-            "body": { "mode": "raw", "raw": "{\n  \"name\": \"ci-key\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ci-key\"\n}"
+            }
           }
         },
         {
           "name": "List API Keys",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/v1/apikeys"
           }
         },
@@ -260,7 +549,12 @@
           "name": "Rotate API Key",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/v1/apikeys/{{api_key_id}}/rotate"
           }
         },
@@ -268,7 +562,12 @@
           "name": "Deactivate API Key",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/v1/apikeys/{{api_key_id}}"
           }
         },
@@ -276,7 +575,12 @@
           "name": "Authenticated Request via API Key",
           "request": {
             "method": "GET",
-            "header": [{ "key": "X-API-Key", "value": "{{api_key}}" }],
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
             "url": "{{base_url}}/api/v1/usage/summary"
           }
         }
@@ -289,7 +593,12 @@
           "name": "List Usage",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/v1/usage?page=1&page_size=20"
           }
         },
@@ -297,16 +606,135 @@
           "name": "Usage Summary",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/v1/usage/summary"
           }
         },
         {
-          "name": "Usage Export (CSV, requires Pro/Enterprise)",
+          "name": "Request Usage Export",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/usage/exports",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "exports"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"2026-08-01T00:00:00Z\"\n}"
+            },
+            "description": "Requires the \"usage.export\" entitlement (Pro/Enterprise). Returns 202 with a job to poll. A free-plan tenant gets 403 with code FEATURE_NOT_ENTITLED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "if (d && d.job) { pm.collectionVariables.set(\"export_job_id\", d.job.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Export Jobs",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
-            "url": "{{base_url}}/api/v1/usage/export"
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/usage/exports",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "exports"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Export Job",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/usage/exports/{{export_job_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "exports",
+                "{{export_job_id}}"
+              ]
+            },
+            "description": "Includes a freshly minted download URL once the job is complete."
+          }
+        },
+        {
+          "name": "Get Export Download URL",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/usage/exports/{{export_job_id}}/download",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usage",
+                "exports",
+                "{{export_job_id}}",
+                "download"
+              ]
+            },
+            "description": "The URL is generated per request and never stored, so it always expires and a replayed old response is not a usable capability."
           }
         }
       ]
@@ -318,7 +746,12 @@
           "name": "List Audit Logs",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/v1/audit?page=1&page_size=20"
           }
         },
@@ -326,12 +759,487 @@
           "name": "Get Audit Log Entry",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
             "url": "{{base_url}}/api/v1/audit/:id",
-            "variable": [{ "key": "id", "value": "" }]
+            "variable": [
+              {
+                "key": "id",
+                "value": ""
+              }
+            ]
           }
         }
       ]
+    },
+    {
+      "name": "GraphQL",
+      "item": [
+        {
+          "name": "Dashboard Query",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/graphql",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "graphql"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query Dashboard {\\n  me { id email role }\\n  tenant { id name plan isActive }\\n  myFeatures\\n  usageSummary { endpoint method requestCount errorCount avgLatencyMs }\\n}\"\n}"
+            },
+            "description": "Several REST endpoints' worth of data in one round trip."
+          }
+        },
+        {
+          "name": "Users with Nested Tenant (DataLoader)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/graphql",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "graphql"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  users(pageSize: 20) {\\n    nodes { id email role isActive tenant { id name plan } }\\n    pageInfo { page pageSize totalCount totalPages hasNext }\\n  }\\n}\"\n}"
+            },
+            "description": "The nested tenant field is batch-loaded: one query for the whole page rather than one per user."
+          }
+        },
+        {
+          "name": "Cross-Tenant Lookup Returns Null",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/graphql",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "graphql"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query ($id: ID!) {\\n  user(id: $id) { id email }\\n}\",\n  \"variables\": {\n    \"id\": \"00000000-0000-0000-0000-000000000000\"\n  }\n}"
+            },
+            "description": "An id belonging to another tenant resolves to null, matching the REST 404."
+          }
+        },
+        {
+          "name": "Update Tenant (mutation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/graphql",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "graphql"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation {\\n  updateTenant(input: { name: \\\"Acme Corporation\\\" }) { id name plan }\\n}\"\n}"
+            },
+            "description": "Requires the admin role. UpdateTenantInput has no plan field."
+          }
+        },
+        {
+          "name": "Generate API Key (mutation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/graphql",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "graphql"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation {\\n  generateApiKey(input: { name: \\\"ci-pipeline\\\" }) {\\n    apiKey { id prefix lastFour createdAt }\\n    plaintext\\n  }\\n}\"\n}"
+            },
+            "description": "The plaintext is returned once and is not recoverable afterwards."
+          }
+        },
+        {
+          "name": "Request Export (entitlement-gated mutation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/graphql",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "graphql"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"mutation {\\n  requestUsageExport(input: {}) { id status createdAt }\\n}\"\n}"
+            },
+            "description": "A free-plan tenant receives FEATURE_NOT_ENTITLED in extensions.code."
+          }
+        },
+        {
+          "name": "Rejected: Too Complex",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/graphql",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "graphql"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"query {\\n  users(pageSize: 100) {\\n    nodes {\\n      id email firstName lastName role isActive createdAt updatedAt lastLoginAt\\n      tenant { id name slug plan isActive createdAt updatedAt }\\n    }\\n    pageInfo { page pageSize totalCount totalPages hasNext }\\n  }\\n}\"\n}"
+            },
+            "description": "Cheap to send, expensive to serve. Rejected before execution with QUERY_REJECTED. Check the X-GraphQL-Complexity response header."
+          }
+        }
+      ],
+      "description": "A second transport over the same service layer. Resolvers call the same services the REST handlers call and hold no database handle, so every tenancy guard, RBAC rule and entitlement check applies identically. POST only."
+    },
+    {
+      "name": "Platform (operator token)",
+      "item": [
+        {
+          "name": "Create Tenant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Platform-Token",
+                "value": "{{platform_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/tenants",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "tenants"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Corp\",\n  \"slug\": \"acme\",\n  \"plan\": \"pro\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List All Tenants",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Platform-Token",
+                "value": "{{platform_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/tenants?page=1&page_size=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "tenants"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Any Tenant",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Platform-Token",
+                "value": "{{platform_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/tenants/{{tenant_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "tenants",
+                "{{tenant_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Tenant Plan",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-Platform-Token",
+                "value": "{{platform_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/tenants/{{tenant_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "tenants",
+                "{{tenant_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"enterprise\"\n}"
+            },
+            "description": "Plan changes live here because a plan determines feature entitlements."
+          }
+        },
+        {
+          "name": "Suspend Tenant",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "X-Platform-Token",
+                "value": "{{platform_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/tenants/{{tenant_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "tenants",
+                "{{tenant_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false\n}"
+            },
+            "description": "Effective on the tenant's next request: authentication re-reads the tenant row rather than trusting the token, so existing tokens stop working immediately."
+          }
+        },
+        {
+          "name": "Delete Tenant",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Platform-Token",
+                "value": "{{platform_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/tenants/{{tenant_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "tenants",
+                "{{tenant_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Grant Feature",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Platform-Token",
+                "value": "{{platform_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/features/grant",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "features",
+                "grant"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_id\": \"{{tenant_id}}\",\n  \"feature_key\": \"usage.export\",\n  \"enabled\": true\n}"
+            },
+            "description": "This endpoint previously accepted a tenant_id from any tenant admin, which let a tenant grant itself Enterprise features. It now requires the operator token."
+          }
+        },
+        {
+          "name": "Rejected: Tenant JWT on the Platform Plane",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/platform/tenants",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "platform",
+                "tenants"
+              ]
+            },
+            "description": "Expect 404. A customer credential must never reach a cross-tenant operation."
+          }
+        }
+      ],
+      "description": "Cross-tenant control plane, authenticated with X-Platform-Token rather than any customer credential. No tenant JWT, however privileged inside its own tenant, can reach these operations. An absent or wrong token returns 404, so the control plane does not advertise itself. Get the token from `terraform output -raw platform_admin_token`, or from PLATFORM_ADMIN_TOKEN locally."
     }
   ]
 }
