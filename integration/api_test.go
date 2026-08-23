@@ -120,7 +120,7 @@ type tenant struct {
 func signup(t *testing.T, label string) tenant {
 	t.Helper()
 
-suffix := fmt.Sprintf("%s-%d", label, time.Now().UnixNano())
+	suffix := fmt.Sprintf("%s-%d", label, time.Now().UnixNano())
 
 	// The API derives the tenant slug from the name (handler.slugify), so
 	// there is no slug field to send — and the strict JSON decoder rejects

@@ -1,5 +1,5 @@
 resource "aws_ecr_repository" "app" {
-  name                 = var.project
+  name = var.project
   # Tags are immutable: a deployed tag must always mean the same bytes. With
   # mutable tags, "roll back to the previous SHA" can silently pull a different
   # image than the one that was tested.

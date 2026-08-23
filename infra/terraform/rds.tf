@@ -72,10 +72,10 @@ resource "aws_db_instance" "main" {
   final_snapshot_identifier = "${local.name}-postgres-final"
   deletion_protection       = var.db_deletion_protection
 
-  auto_minor_version_upgrade      = true
-  performance_insights_enabled    = true
+  auto_minor_version_upgrade            = true
+  performance_insights_enabled          = true
   performance_insights_retention_period = 7
-  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+  enabled_cloudwatch_logs_exports       = ["postgresql", "upgrade"]
 
   tags = { Name = "${local.name}-postgres" }
 
