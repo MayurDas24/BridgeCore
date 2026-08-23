@@ -1,4 +1,4 @@
-# BridgeCore
+# BridgeCore(under construction)
 
 A production-grade multi-tenant SaaS backend platform in Go: authentication, RBAC,
 tenant isolation, plan-based feature entitlements, API keys, usage metering, audit
